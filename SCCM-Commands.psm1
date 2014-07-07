@@ -26,6 +26,7 @@
 #  2014-01-01	Stéphane van Gulick	New Functions:[Folders] : Get-SCCMFolder, New-SCCMFolder, Remove-SCCMFolder, Move-SCCMFolderContent
 #  2014-01-01						New Functions:[ComputerAssociation] : Get-SCCMComputerAssociation, New-SCCMComputerAssociation, Remove-SCCMComputerAssocation
 #  2014-01-01						New Functions:[Helper functions] : Convert-WMITime, ConvertFrom-WMITime, Get-ContentID, Convert-SQLTimeToWMITime
+#  2014-07-07	JanPaul Klompmaker	New Functions: Get-Program, Get-Package, Get-DistributionPoints, Get-Advertisement
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #--------------------------------------Version 1.0-------------------------
@@ -179,7 +180,58 @@ Function Get-SCCMUser {
         }
     }
 }
- 
+
+Function Get-SCCMProgram {
+    [CmdletBinding()]
+    PARAM (
+	[Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+	[Parameter(Mandatory=$true, HelpMessage="Program PackageID")]$PrgPackageID
+    )
+    PROCESS {
+    	return Get-WmiObject -query "select * FROM SMS_Program Where packageid = '$($PrgPackageID)'" -computername $SccmServer.Machine -namespace $SccmServer.Namespace
+    	
+    }
+}
+
+Function Get-SCCMPackage {
+    [CmdletBinding()]	
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$false, HelpMessage="Optional Filter on query")][String] $Filter = $null
+    )
+    
+    PROCESS {
+    	return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Package" -Filter $Filter
+    }
+}
+
+Function Get-DistributionPoint {
+    [CmdletBinding()]
+    PARAM (
+    	[Parameter(Mandatory=$true, HelpMessage="SCCM Server")[Alias("Server","SmsServer")][System.Object] $SccmServer,
+    	[Parameter(Mandatory=$false, HelpMessage="Optional Filter on PackageID")][String] $PackageID = $null
+    )
+    PROCESS {
+    	if ($PackageID -eq $false) {
+    	    return Get-SCCMObject -sccmserver $SccmServer -class SMS_DistributionPoint
+        } else {
+            return Get-SCCMObject -sccmserver $SccmServer -class SMS_DistributionPoint -Filter "PackageID = '$PackageID'"
+        }
+    }
+}
+
+Function Get-Advertisement {
+    [CmdletBinding()]
+    PARAM (
+    	[Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+    	[Parameter(Mandatory=$false, HelpMessage="Optional Filter on query")][String] $Filter = $null
+    )
+    
+    PROCESS {
+    	return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement" -Filter $Filter
+    }
+}
+
 Function Get-SCCMCollectionMembers {
     [CmdletBinding()]
     PARAM (
