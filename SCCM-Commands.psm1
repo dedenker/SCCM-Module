@@ -208,7 +208,7 @@ Function Get-SCCMPackage {
 Function Get-DistributionPoint {
     [CmdletBinding()]
     PARAM (
-    	[Parameter(Mandatory=$true, HelpMessage="SCCM Server")[Alias("Server","SmsServer")][System.Object] $SccmServer,
+    	[Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
     	[Parameter(Mandatory=$false, HelpMessage="Optional Filter on PackageID")][String] $PackageID = $null
     )
     PROCESS {
