@@ -3,12 +3,13 @@
 # 																															Stephane van Gulick / PowerShellDistrict.Com
 # 																															Rikard Ronnkvist / snowland.se
 #																															Michael Niehaus / http://blogs.technet.com/mniehaus
+#																															JanPaul Klompmaker / badcluster@hotmail.com
 #  Usage:
 #   Save the file as SCCM-Commands.psm1
 #   PS:>Import-Module SCCM-Commands
 #   PS:>Get-SCCMCommands
 #
-#  Current Version : 2.0
+#  Current Version : 3.0
 #
 #  History:
 #
@@ -26,9 +27,8 @@
 #  2014-01-01	Stéphane van Gulick	New Functions:[Folders] : Get-SCCMFolder, New-SCCMFolder, Remove-SCCMFolder, Move-SCCMFolderContent
 #  2014-01-01						New Functions:[ComputerAssociation] : Get-SCCMComputerAssociation, New-SCCMComputerAssociation, Remove-SCCMComputerAssocation
 #  2014-01-01						New Functions:[Helper functions] : Convert-WMITime, ConvertFrom-WMITime, Get-ContentID, Convert-SQLTimeToWMITime
-#  2014-07-07	JanPaul Klompmaker	New Functions: Get-Program, Get-Package, Get-DistributionPoints, Get-Advertisement
-#  2014-07-08   JanPaul Klompmaker      New Functions: Get-Advertisement
-#					Bug Fix: Get-Program improve/fix from WMI generic failure (null return)
+#  2014-07-07	JanPaul Klompmaker	New Functions: Get-SCCMProgram, Get-SCCMPackage, Get-SCCMDistributionPoints, Get-SCCMAdvertisement
+#  2014-17-07	JanPaul Klompmaker	New Functions: New-SCCMPackage, New-SCCMAdvertisement, New-SCCMProgram, Remove-SCCMPackage, Remove-SCCMAdvertisement
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #--------------------------------------Version 1.0-------------------------
@@ -186,14 +186,31 @@ Function Get-SCCMUser {
 Function Get-SCCMProgram {
     [CmdletBinding()]
     PARAM (
-	[Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
-	[Parameter(Mandatory=$true, HelpMessage="Program PackageID")]$PrgPackageID
+		[Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+		[Parameter(Mandatory=$false, HelpMessage="Optional Program PackageID filter")] $PackageID
+		
     )
     PROCESS {
-    	return Get-SCCMObject -sccmServer $SccmServer -class SMS_Program -Filter "PackageId = '$PrgPackageID'"
-    	
+	if ($PackageID -eq $false) {
+    	    return Get-SCCMObject -sccmserver $SccmServer -class SMS_Program
+        } else {
+            return Get-SCCMObject -sccmserver $SccmServer -class SMS_Program -Filter "PackageID = '$($PackageID)'"
+        }
+	}
+}
+
+Function Get-SCCMAdvertisement {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$false, HelpMessage="Optional Filter on query")][String] $Filter = $null
+    )
+
+    PROCESS {
+        return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement" -Filter $Filter
     }
 }
+
 
 Function Get-SCCMPackage {
     [CmdletBinding()]	
@@ -205,18 +222,6 @@ Function Get-SCCMPackage {
     PROCESS {
     	return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Package" -Filter $Filter
     }
-}
-
-Function Get-SCCMAdvertisement {
-   [CmdletBinding()]
-   PARAM (
-   	[Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
-   	[Parameter(Mandatory=$false, HelpMessage="Optional Filter on query")][String] $Filter = $null
-   )
-   
-   PROCESS {
-   	return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement" -Filter $Filter
-   }
 }
 
 Function Get-DistributionPoint {
@@ -424,8 +429,6 @@ Process {
 		Write-Host "Couldn't copy $($ApplicationNameSourceFolder) to $($destination). Quiting" -ForegroundColor "red"
 		exit
 		}
-		
-
 
 	#XmlManifest
 	Write-Verbose "----XML Manifest section----"
@@ -458,10 +461,6 @@ Process {
 			Write-Verbose "Creating extended data"
 			$exData = [Text.Encoding]::UTF8.GetBytes($Version)
 			$exDataSize = $exData.getupperbound(0) + 1
-
-
-
-
 	
 	#Getting OSD
 	Write-Verbose "----OSD section----"
@@ -484,7 +483,6 @@ Process {
 					
 					}
 			}
-		
 
 	#AppVPackage
 	Write-Verbose "----App-V PAckage section----"
@@ -517,7 +515,6 @@ Process {
 
 		#Getting PackageID
 			$PackageID = $Package.PackageID
-
 
 	#SFT+SPRJ
 	Write-Verbose "----SFT and SPRJ section----"
@@ -569,10 +566,8 @@ Process {
 						Rename-Item -Path $f.fullname -NewName "$PkgGUID.sft" 
 					}
 			
-			
 			}
 				
-		
 	#Icons
 
 	 Write-Verbose "----Icons section----"
@@ -588,7 +583,6 @@ Process {
 	 
 		$RawIcon = $RawIcon -replace "/", "\"
 		$Icon = $RawIcon -replace "%SFT_MIME_SOURCE%", $ApplicationFolder
-
 
 	 #Reading icon properties 
 	 	$Obj = New-Object -ComObject ADODB.Stream
@@ -1768,7 +1762,6 @@ Function Get-SCCMTaskSequencePackage {
 		}
 	
 		if ($Full){
-			
 			$res.get()
 		}
     }
@@ -1790,6 +1783,203 @@ Function Get-SCCMTaskSequence {
 }
 
 #endregion
+
+# - - - - - - - - - - Packages - - -  - - - - - - - - - - - - 
+Function New-SCCMPackage {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true, HelpMessage="Package Name", ValueFromPipeline=$true)][String] $Name,
+ 
+        [Parameter(Mandatory=$false, HelpMessage="Package Version")][String] $Version = "",
+        [Parameter(Mandatory=$false, HelpMessage="Package Manufacturer")][String] $Manufacturer = "",
+        [Parameter(Mandatory=$false, HelpMessage="Package Language")][String] $Language = "",
+        [Parameter(Mandatory=$false, HelpMessage="Package Description")][String] $Description = "",
+        [Parameter(Mandatory=$false, HelpMessage="Package Data Source Path")][String] $PkgSourcePath = "",
+        [Parameter(Mandatory=$false, HelpMessage="Package Sharename")][String] $PkgShareName = ""
+    )
+ 
+    PROCESS {
+        $packageClass = [WMICLASS]"\\$($SccmServer.Machine)\$($SccmServer.Namespace):SMS_Package"
+        $newPackage = $packageClass.createInstance()
+ 
+        $newPackage.Name = $Name
+        if ($Version -ne "")        { $newPackage.Version = $Version }
+        if ($Manufacturer -ne "")   { $newPackage.Manufacturer = $Manufacturer }
+        if ($Language -ne "")       { $newPackage.Language = $Language }
+        if ($Description -ne "")    { $newPackage.Description = $Description }
+ 
+        if ($PkgSourcePath -ne "") {
+            $newPackage.PkgSourceFlag = 2  # Direct (3 = Compressed)
+            $newPackage.PkgSourcePath = $PkgSourcePath
+            if ($PkgShareName -ne "") {
+                $newPackage.ShareName = $PkgShareName
+                $newPackage.ShareType = 2
+            }
+        } else {
+            $newPackage.PkgSourceFlag = 1  # No source
+            $newPackage.PkgSourcePath = $null
+        }
+        $newPackage.Put()
+ 
+        $newPackage.Get()
+        Write-Verbose "Return the new package with ID $($newPackage.PackageID)"
+        return $newPackage
+    }
+}
+
+Function New-SCCMAdvertisement {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true)] $AdvertisementName,
+        [Parameter(Mandatory=$true)] $collectionID,
+        [Parameter(Mandatory=$true)] $PackageID,
+        [Parameter(Mandatory=$true)] $ProgramName,
+        [Switch] $Download,
+        [Parameter(Mandatory=$false, HelpMessage="YYYYMMDDhhmm")] $StartTime,
+        [Parameter(Mandatory=$false, HelpMessage="YYYYMMDDhhmm")] $EndTime,
+        [Parameter(Mandatory=$false, HelpMessage="YYYYMMDDhhmm")] $MandatoryTime
+    )
+    PROCESS {
+        $strServer = $SccmServer.machine
+        $strNamespace= $SccmServer.namespace
+        $AdvClass = [WmiClass]("\\$strServer\" + "$strNameSpace" + ":SMS_Advertisement")
+        if ($Download) {
+            $RemoteClientFlags = "3152"
+        } else {
+            $RemoteClientFlags = "3208"
+        }
+        if ($StartTime -ne $null) {
+            $PresentTime = $StartTime + "00.000000+***"
+        } else {
+            $PresentTime = "20200110000000.000000+***"
+        }
+        if ($EndTime -ne $null) {
+            $ExpirationTime = $Endtime + "00.000000+***"
+            $ExpirationTimeEnabled = $true
+        } else {
+            $ExpirationTime = "20200113000000.000000+***"
+            $ExpirationTimeEnabled = $false
+        }
+        if ($MandatoryTime -ne $null) {
+            $Deadline = $MandatoryTime + "00.000000+***"
+        } else {
+            $Deadline = $null
+        }
+ 
+        # Get the all the Advertisement Properties
+        $newAdvertisement = $AdvClass.CreateInstance()
+        $newAdvertisement.AdvertisementName = $AdvertisementName
+        $newAdvertisement.CollectionID = $collectionID
+        $newAdvertisement.PackageID = $PackageID
+        $newAdvertisement.ProgramName = $ProgramName
+        $newAdvertisement.RemoteClientFlags = $RemoteClientFlags
+        $newAdvertisement.PresentTime = $PresentTime
+        $newAdvertisement.ExpirationTime = $ExpirationTime
+        $newAdvertisement.ExpirationTimeEnabled = $ExpirationTimeEnabled
+        $newAdvertisement.Priority = "2"
+        $newAdvertisement.IncludeSubCollection = $false
+ 
+        # Create Advertisement
+        $retval = $newAdvertisement.psbase.Put()
+        if ($Deadline -ne $null) {
+            # Create Mandatory Schedule
+            $wmiClassSchedule = [WmiClass]("\\$strServer\" + "$strNameSpace" + ":SMS_ST_NonRecurring")
+            $AssignedSchedule = $wmiClassSchedule.psbase.createinstance()
+            $AssignedSchedule.starttime = $Deadline
+            if ($Download) {
+                $newAdvertisement.RemoteClientFlags = "9296"
+            } else {
+                $newAdvertisement.RemoteClientFlags = "9352"
+            }
+            $newAdvertisement.AssignedSchedule = $AssignedSchedule
+            $newAdvertisement.AssignedScheduleEnabled = $true
+            $newAdvertisement.psbase.put()
+            $NewAdvertisementProperties = $newAdvertisement.AssignedSchedule
+            foreach ($Adv in $NewAdvertisementProperties) {
+                write-verbose "Created Advertisement. Name = $($newAdvertisement.AdvertisementName)"
+                write-verbose "Created Advertisement. ID = $newAdvertisement"
+                Write-Verbose "Mandatory Deadline created: $($Adv.StartTime)"
+            }
+        } else {
+            write-verbose "Created Advertisement. Name = $($newAdvertisement.AdvertisementName)"
+            write-verbose "Created Advertisement. ID = $newAdvertisement"
+            write-verbose "No Mandatory-Deadline defined"
+        }
+    }
+}
+ 
+Function New-SCCMProgram {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true, HelpMessage="Program Name")][String] $PrgName = "",
+        [Parameter(Mandatory=$true, HelpMessage="Program PackageID")]$PrgPackageID,
+        [Parameter(Mandatory=$false, HelpMessage="Program Comment")][String] $PrgComment = "",
+        [Parameter(Mandatory=$false, HelpMessage="Program CommandLine")][String] $PrgCommandLine = "",
+        [Parameter(Mandatory=$false, HelpMessage="Program MaxRunTime")]$PrgMaxRunTime,
+        [Parameter(Mandatory=$false, HelpMessage="Program Diskspace Requirement")]$PrgSpaceReq,
+        [Parameter(Mandatory=$false, HelpMessage="Program Working Directory")][String] $PrgWorkDir = "",
+        [Parameter(Mandatory=$false, HelpMessage="Program Flags")] $PrgFlags
+    )
+    PROCESS {
+        $programClass = [WMICLASS]"\\$($SccmServer.Machine)\$($SccmServer.Namespace):SMS_Program"
+        $newProgram = $programClass.createInstance()
+        $newProgram.ProgramName = $PrgName
+        $newProgram.PackageID = $PrgPackageID
+        if ($PrgComment -ne "") { $newProgram.Comment = $PrgComment }
+        if ($PrgCommandLine -ne "") { $newProgram.CommandLine = $PrgCommandLine }
+        if ($PrgMaxRunTime -ne $null) { $newProgram.Duration = $PrgMaxRunTime} else { $newProgram.Duration = "0" }
+        if ($PrgSpaceReq -ne $null) { $newProgram.DiskSpaceReq = $PrgSpaceReq }
+        if ($PrgWorkDir -ne "") { $newProgram.WorkingDirectory = $PrgWorkDir }
+        if ($PrgFlags -ne $null) { $newProgram.ProgramFlags = $PrgFlags} else { $newProgram.ProgramFlags = "135290880" }
+        $newProgram.Put()
+        $newProgram.Get()
+        Write-Verbose "Return the new program for Package $($newProgram.PackageID)"
+        return $newProgram
+    }
+}
+
+Function Remove-SCCMPackage {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true, HelpMessage="Package ID", ValueFromPipeline=$true)][String] $Name,
+		[Parameter(Mandatory=$true, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
+
+    )
+ 
+    PROCESS {
+		if ($Confirmed -eq "Confirmed") {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($Name)'" | remove-wmiobject
+        } else {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($Name)'" | remove-wmiobject -confirm
+        }
+		
+        Write-Verbose "Removed the package with ID $($Name)"
+    }
+}
+
+Function Remove-SCCMAdvertisement {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true, HelpMessage="Advertisement ID", ValueFromPipeline=$true)][String] $AdvertisementID,
+		[Parameter(Mandatory=$true, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
+
+    )
+
+    PROCESS {
+		if ($Confirmed -eq "Confirmed") {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "PackageID='$($Name)'" | remove-wmiobject
+        } else {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "PackageID='$($Name)'" | remove-wmiobject -confirm
+        }
+		
+        Write-Verbose "Removed the package with ID $($Name)"
+    }
+}
 
 # - - - - - - - - - - Drivers- - - - - - - - - - - - - - -
 
@@ -1820,7 +2010,6 @@ Function New-SCCMDriver {
         [Parameter(Mandatory=$true)] [String]$Path,
         [Parameter(Mandatory=$true)] [String]$InfFile
           
-        
     )
     PROCESS {
 
@@ -1891,7 +2080,6 @@ Function Add-SCCMDriversToBootImage {
 	
 	}
 
- 
  }
 
 Function Add-SCCMDriverToDriverPackage {
@@ -1943,10 +2131,10 @@ Function Get-SCCMDriver {
 		if ($Full)
 			{$res.get()}
         return $res
-	
-        
+	   
     }
 }
+#endregion
  
 # - - - - - - - - - - DriverPackage- - - - - - - - - - 
 
@@ -2517,7 +2705,6 @@ Function Update-SCCMPackageSourcePath {
     }
 }
  
-
 #EndRegion
 
 #-------------------- Computer Assocciation -------------------
@@ -2838,7 +3025,6 @@ Function Remove-SCCMFolder {
     )
  
     PROCESS {
-		
 		switch ($PSBoundParameters.keys){
 		("Name"){	$Folder = Get-SCCMObject -sccmServer $SccmServer -class "SMS_ObjectContainerNode" -Filter "Name='$name'"; break}
 		("ContainderNodeID"){$Folder = Get-SCCMObject -sccmServer $SccmServer -class "SMS_ObjectContainerNode" -Filter "ContainderNodeID = $ContainderNodeID'" ; break}
@@ -2847,7 +3033,6 @@ Function Remove-SCCMFolder {
 		}
 		
 		$Folder.Delete()
-      
     }
 }
 
@@ -2880,11 +3065,9 @@ Function Move-SCCMFolderContent {
 					Driver
 					SoftwareUpdate
 					ConfigurationItem
-					
 .EXAMPLE
 	$Connection = Connect-SccmServer "MyServer01"
 	Move-SCCMFolderContent -SccmServer $Connection -ObjectID $SourceID -DestinationID $DestID 
-  	
 .NOTES
 	Author: Stéphane van Gulick
 	version: 1.0
@@ -2903,8 +3086,7 @@ Function Move-SCCMFolderContent {
     )
  
     PROCESS {
-		
-		
+				
 		#$ObjectType = $null
 		switch ($ObjectType){
 					("Package") {$type = 2}
@@ -2937,13 +3119,10 @@ Function Move-SCCMFolderContent {
     
     return $result.ReturnValue 
 		
-		
-      
     }
 }
 
 #EndRegion
-
 
 #---------------------Helper functions---
 
@@ -2958,7 +3137,7 @@ Function Get-ContentID {
 		
 		$ContentID = (Get-SCCMObject -sccmServer $SccmServer -class "SMS_CIToContent" -Filter "CI_ID='$CI_ID'").ContentID
 		return $ContentID 
-	
+
  }
 
 Function Convert-WMITime {
@@ -3121,7 +3300,5 @@ Function Convert-SQLTimeToWMITime {
 		Return $Wmitime
 	}
 }
-
-#endregion
 
 #endregion
