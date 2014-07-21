@@ -3108,7 +3108,7 @@ Function Move-SCCMFolderContent {
 					Default {$type = $ObjectType}
 				}
 		
-        $sourceContainerId=(Get-SCCMObject -SccmServer $sccm -class "SMS_ObjectContainerItem" -Filter ("InstanceKey='$ObjectID'")).ContainerNodeID
+        $sourceContainerId=(Get-SCCMObject -SccmServer $SccmServer -class "SMS_ObjectContainerItem" -Filter ("InstanceKey='$ObjectID'")).ContainerNodeID
         If(!$sourceContainerId){
             $sourceContainerId="0"
         }
