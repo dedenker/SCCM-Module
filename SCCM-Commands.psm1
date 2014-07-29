@@ -30,7 +30,7 @@
 #  2014-07-07	JanPaul Klompmaker	New Functions: Get-SCCMProgram, Get-SCCMPackage, Get-SCCMDistributionPoints, Get-SCCMAdvertisement
 #  2014-17-07	JanPaul Klompmaker	New Functions: New-SCCMPackage, New-SCCMAdvertisement, New-SCCMProgram, Remove-SCCMPackage, Remove-SCCMAdvertisement
 #									Remove-SCCMCollection, New-SCCMCollection
-# 					More Functions: Move-SCCMPackage, Move-SCCMAdvertisement, Move-SCCMFolder, Move-ObjectToContainer, Move-SCCMPackageToFolder, Move-SCCMAdvertisementToFolder
+# move package move advertisement Move-SCCMFolder Move-ObjectToContainer Move-SCCMPackageToFolder Move-SCCMAdvertisementToFolder 
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #--------------------------------------Version 1.0-------------------------
@@ -292,6 +292,24 @@ Function Get-SCCMParentCollection {
         $parentCollection = Get-SCCMObject -sccmServer $SccmServer -class "SMS_CollectToSubCollect" -Filter "subCollectionID = '$CollectionID'"
  
         return Get-SCCMCollection -sccmServer $SccmServer -Filter "CollectionID = '$($parentCollection.parentCollectionID)'"
+    }
+}
+
+Function Get-SCCMCollection {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$false, HelpMessage="CollectionID",ValueFromPipeline=$true)][Alias("subCollectionID")][String] $CollectionID
+    )
+ 
+    PROCESS {
+        $parentCollection = Get-SCCMObject -sccmServer $SccmServer -class "SMS_CollectToSubCollect" -Filter "subCollectionID = '$CollectionID'"
+ 
+		if($CollectionID){
+			return Get-SCCMObject -sccmServer $SccmServer -class "SMS_CollectToSubCollect" -Filter "subCollectionID = '$CollectionID'"
+		} else {
+			return Get-SCCMObject -sccmServer $SccmServer -class "SMS_CollectToSubCollect"
+		}
     }
 }
  
