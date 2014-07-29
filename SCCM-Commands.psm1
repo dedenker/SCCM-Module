@@ -29,6 +29,8 @@
 #  2014-01-01						New Functions:[Helper functions] : Convert-WMITime, ConvertFrom-WMITime, Get-ContentID, Convert-SQLTimeToWMITime
 #  2014-07-07	JanPaul Klompmaker	New Functions: Get-SCCMProgram, Get-SCCMPackage, Get-SCCMDistributionPoints, Get-SCCMAdvertisement
 #  2014-17-07	JanPaul Klompmaker	New Functions: New-SCCMPackage, New-SCCMAdvertisement, New-SCCMProgram, Remove-SCCMPackage, Remove-SCCMAdvertisement
+#									Remove-SCCMCollection, New-SCCMCollection
+# 					More Functions: Move-SCCMPackage, Move-SCCMAdvertisement, Move-SCCMFolder, Move-ObjectToContainer, Move-SCCMPackageToFolder, Move-SCCMAdvertisementToFolder
 # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
 #--------------------------------------Version 1.0-------------------------
@@ -207,7 +209,11 @@ Function Get-SCCMAdvertisement {
     )
 
     PROCESS {
-        return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement" -Filter $Filter
+		if(!($Filter)) {
+			return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement"
+		} else {
+			return Get-SCCMObject -sccmServer $SccmServer -class "SMS_Advertisement" -Filter "AdvertisementID='$Filter'"
+		}
     }
 }
 
@@ -349,6 +355,71 @@ Function Get-SCCMCollectionRules {
         $col = [wmi]"$($SccmServer.SccmProvider.NamespacePath):SMS_Collection.CollectionID='$($CollectionID)'"
  
         return $col.CollectionRules
+    }
+}
+
+function New-SCCMCollection  {
+	[CmdletBinding()]
+    PARAM (
+		#$Server = $Env:ComputerName, $Name, $Site, $ParentCollectionID = "COLLROOT"
+		[Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+		[Parameter(Mandatory=$true, HelpMessage="New Collection Name", ValueFromPipeLine=$true)][String] $CollectionName,
+		[Parameter(Mandatory=$false, Helpmessage="Parent Collection ID", ValueFromPipeLine=$true)][String] $ParentID,
+		[Parameter(Mandatory=$false, Helpmessage="Collection Comments", ValueFromPipeLine=$true)][String] $Comment
+	)
+     
+	PROCESS {
+		$ColClass = [WMIClass]"\\$($SccmServer.machine)\$($SccmServer.namespace):SMS_Collection"
+		$Col = $ColClass.PSBase.CreateInstance()
+		$Col.Name = $CollectionName
+		$Col.OwnedByThisSite = $True
+		if(!($Comment)) {
+			$Col.Comment = "Collection $CollectionName"
+		} else {
+			$Col.Comment = $Comment
+		}
+		$Col.psbase
+		$Col.psbase.Put()
+     
+		$NewCollectionID = (Get-WmiObject -computerName $SccmServer.machine -namespace $SccmServer.namespace -class SMS_Collection | where {$_.Name -eq $CollectionName}).CollectionID
+        if($NewCollectionID.count -gt 1) {
+			$NewCollectionID
+			"Warning: More with $CollectionName, try other name"; ""
+		}
+		$RelClass = [WMIClass]"\\$($server.machine)\$($Server.namespace):SMS_CollectToSubCollect"
+		$Rel = $RelClass.PSBase.CreateInstance()
+		if(!($ParentID)) {
+			$ParentCollectionID = "COLLROOT"
+		} else {
+			$ParentCollectionID = $ParentID
+		}
+		$Rel.ParentCollectionID = $ParentCollectionID
+		$Rel.SubCollectionID = $NewCollectionID
+		$Rel.psbase
+		$Rel
+		"      New Collection: " + $CollectionName
+		"Parent Collection ID: " + $ParentCollectionID
+		$Rel.psbase.Put()
+     }
+}
+
+Function Remove-SCCMCollection {
+    [CmdletBinding()]
+    PARAM (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [Parameter(Mandatory=$true, HelpMessage="Collection ID", ValueFromPipeline=$true)][String] $CollectionID,
+		[Parameter(Mandatory=$false, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
+
+    )
+ 
+    PROCESS {
+		if ($Confirmed -eq "Confirmed") {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Collection" -filter "CollectionID='$($CollectionID)'" | remove-wmiobject
+        } else {
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Collection" -filter "CollectionID='$($CollectionID)'" | remove-wmiobject -confirm
+        }
+		
+        Write-Verbose "Removed the Collection with ID $($CollectionID)"
     }
 }
  
@@ -1842,9 +1913,7 @@ Function New-SCCMAdvertisement {
         [Parameter(Mandatory=$false, HelpMessage="YYYYMMDDhhmm")] $MandatoryTime
     )
     PROCESS {
-        $strServer = $SccmServer.machine
-        $strNamespace= $SccmServer.namespace
-        $AdvClass = [WmiClass]("\\$strServer\" + "$strNameSpace" + ":SMS_Advertisement")
+        $AdvClass = [WmiClass]("\\" + $SccmServer.Machine + "\" + $SccmServer.Namespace + ":SMS_Advertisement")
         if ($Download) {
             $RemoteClientFlags = "3152"
         } else {
@@ -1882,10 +1951,10 @@ Function New-SCCMAdvertisement {
         $newAdvertisement.IncludeSubCollection = $false
  
         # Create Advertisement
-        $retval = $newAdvertisement.psbase.Put()
+        $newAdvertisement.psbase.Put()
         if ($Deadline -ne $null) {
             # Create Mandatory Schedule
-            $wmiClassSchedule = [WmiClass]("\\$strServer\" + "$strNameSpace" + ":SMS_ST_NonRecurring")
+            $wmiClassSchedule = [WmiClass]("\\" + $strServer + "\" + $strNameSpace + ":SMS_ST_NonRecurring")
             $AssignedSchedule = $wmiClassSchedule.psbase.createinstance()
             $AssignedSchedule.starttime = $Deadline
             if ($Download) {
@@ -1945,16 +2014,16 @@ Function Remove-SCCMPackage {
     [CmdletBinding()]
     PARAM (
         [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
-        [Parameter(Mandatory=$true, HelpMessage="Package ID", ValueFromPipeline=$true)][String] $Name,
-		[Parameter(Mandatory=$true, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
+        [Parameter(Mandatory=$true, HelpMessage="Package ID", ValueFromPipeline=$true)][String] $PackageID,
+		[Parameter(Mandatory=$false, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
 
     )
  
     PROCESS {
 		if ($Confirmed -eq "Confirmed") {
-            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($Name)'" | remove-wmiobject
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($PackageID)'" | remove-wmiobject
         } else {
-            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($Name)'" | remove-wmiobject -confirm
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Package" -filter "PackageID='$($PackageID)'" | remove-wmiobject -confirm
         }
 		
         Write-Verbose "Removed the package with ID $($Name)"
@@ -1966,15 +2035,15 @@ Function Remove-SCCMAdvertisement {
     PARAM (
         [Parameter(Mandatory=$true, HelpMessage="SCCM Server")][Alias("Server","SmsServer")][System.Object] $SccmServer,
         [Parameter(Mandatory=$true, HelpMessage="Advertisement ID", ValueFromPipeline=$true)][String] $AdvertisementID,
-		[Parameter(Mandatory=$true, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
+		[Parameter(Mandatory=$false, HelpMessage="Confirm", ValueFromPipeline=$true)][String] $Confirmed
 
     )
 
     PROCESS {
 		if ($Confirmed -eq "Confirmed") {
-            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "PackageID='$($Name)'" | remove-wmiobject
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "AdvertisementID='$($AdvertisementID)'" | remove-wmiobject
         } else {
-            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "PackageID='$($Name)'" | remove-wmiobject -confirm
+            get-wmiobject -computername $SccmServer.Machine -namespace $SccmServer.Namespace -class "SMS_Advertisement" -filter "AdvertisementID='$($AdvertisementID)'" | remove-wmiobject -confirm
         }
 		
         Write-Verbose "Removed the package with ID $($Name)"
@@ -2880,21 +2949,45 @@ Function Get-SCCMFolder {
     [CmdletBinding()]
     PARAM (
         [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
-		[Parameter(Mandatory=$false, HelpMessage="Name of folder")][String] $Name,
-		[Parameter(Mandatory=$false, HelpMessage="ID of folder")][String] $ContainderNodeID,
+		[parameter(Mandatory=$false,HelpMessage="Folder Name to search")][string]$Name,  #$folderName
+		[parameter(Mandatory=$false,HelpMessage="Optional Folder ID")][ValidateScript( { $_ -gt 0 } )][int]$ContainerNodeID, #$folderNodeId
         [Parameter(Mandatory=$false, HelpMessage="Optional Filter on query")][String] $Filter = $null
     )
-process {
-
-		
+	
+	PROCESS {
 		switch ($PSBoundParameters.keys){
-		("Name"){	$Result = Get-SCCMObject -sccmServer $SccmServer -class "SMS_ObjectContainerNode" -Filter "Name='$name'"; break}
-		("ContainderNodeID"){$Result = Get-SCCMObject -sccmServer $SccmServer -class "SMS_ObjectContainerNode" -Filter "ContainderNodeID = $ContainderNodeID'" ; break}
-		
-		Default {$Result = Get-SCCMObject -sccmServer $SccmServer -class "SMS_ObjectContainerNode" -Filter $filter}
+		("Name"){	
+			return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { 
+				($_.Name -like $Name) -and (@(2,3) -contains $_.ObjectType)
+			}
+#		break
 		}
-        return $Result
-    
+		("ContainerNodeID"){
+			return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { 
+				($_.ContainerNodeID -eq $ContainerNodeID) -and (@(2,3) -contains $_.ObjectType)
+			}
+#			break
+			}
+		
+		Default { 
+			return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { 
+				@(2,3) -contains $_.ObjectType
+				}
+			}
+		}
+    #    return $Result
+
+	#PROCESS {
+	#	if($folderName) {
+	#		return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { ($_.Name -like $folderName) -and (@(2,3) -contains $_.ObjectType) }
+	#	} elseif($folderNodeId) {
+	#		return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { ($_.ContainerNodeID -eq $folderNodeId) -and (@(2,3) -contains $_.ObjectType) }
+	#	} else {
+	#		return Get-WMIObject -ComputerName $SccmServer.Machine -Namespace $SccmServer.Namespace -Query "Select * From SMS_ObjectContainerNode" | Where { @(2,3) -contains $_.ObjectType }
+	#	}
+	#}
+
+   
 }
 
 
@@ -3036,6 +3129,174 @@ Function Remove-SCCMFolder {
     }
 }
 
+<#
+.SYNOPSIS
+Moves an SCCM Folder.
+
+.DESCRIPTION
+Moves an SCCM Folder.
+
+.PARAMETER siteProvider
+The name of the site provider.
+
+.PARAMETER siteCode
+The 3-character site code.
+
+.PARAMETER folderNodeId
+The unique node ID for the folder being moved.
+
+.PARAMETER newParentFolderNodeId
+The unique node ID of the new parent folder.
+
+.LINK
+http://msdn.microsoft.com/en-us/library/cc145264.aspx
+
+#>
+Function Move-SCCMFolder {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipelineByPropertyName=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [parameter(Mandatory=$true, HelpMessage="Folder ID#")][ValidateScript( { $_ -gt 0 } )][ValidateNotNull()][int]$folderNodeId,
+        [parameter(Mandatory=$true, HelpMessage="Target Parent Folder ID#")][ValidateScript( { $_ -ge 0 } )][ValidateNotNull()][int]$newParentFolderNodeId
+    )
+
+    # We need to make sure the parent actually exists, if it doesn't, we're moving the folder to the root folder for that object type.
+    if($newParentFolderNodeId -ne 0) {
+        $parentFolder = Get-SCCMFolder $SccmServer -ContainerNodeID $newParentFolderNodeId
+        if(!$parentFolder) {
+            $newParentFolderNodeId = 0
+        }
+    }
+
+    $folder = Get-SCCMFolder $SccmServer -ContainerNodeID $folderNodeId
+    if($folder) {
+        $folder.ParentContainerNodeID = $newParentFolderNodeId
+        $folder.Put() | Out-Null
+        return $folder
+    }
+	return Get-WMIObject -ComputerName $SccmServer.machine -Namespace $SccmServer.namespace -Query "Select * From SMS_ObjectContainerNode" | Where { ($_.ContainerNodeID -eq $folderNodeId) }
+	#Get-SCCMObject r -class "SMS_ObjectContainerNode" -Filter "ContainerNodeID='50'"
+}
+
+<#
+.SYNOPSIS
+Moves an SCCM advertisement to a folder.
+
+.DESCRIPTION
+Moves an SCCM advertisement to a folder.
+
+.PARAMETER siteProvider
+The name of the site provider.
+
+.PARAMETER siteCode
+The 3-character site code.
+
+.PARAMETER advertisementId
+The ID of the advertisement to be moved.
+
+.PARAMETER targetFolderNodeId
+The folder to which the advertisement is to be moved. If this value is 0, the advertisement is removed from all folders.
+#>
+Function Move-SCCMAdvertisementToFolder {
+    [CmdletBinding()]
+    param (
+        [string]
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipelineByPropertyName=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [parameter(Mandatory=$true, HelpMessage="Advertisement ID")][ValidateLength(8,8)][string]$advertisementId,
+        [parameter(Mandatory=$true, HelpMessage="Target Advertise Folder ID#")][ValidateScript( { $_ -ge 0 } )][ValidateNotNull()][int]$targetFolderNodeId
+    )
+
+    $result = Move-ObjectToContainer -ComputerName $SccmServer.machine -Namespace $SccmServer.namespace -instanceKey $advertisementId -targetContainerNodeId $targetFolderNodeId -objectType 3
+    if($result -ne 0) {
+        Throw "There was a problem moving advertisement with ID $advertisementId to folder with ID $folderNodeId"
+    }
+}
+
+<#
+.SYNOPSIS
+Moves objects between containers.
+
+.DESCRIPTION
+Moves objects between containers.
+
+.PARAMETER siteProvider
+The name of the site provider.
+
+.PARAMETER siteCode
+The 3-character site code.
+
+.PARAMETER packageId
+The instance key of the object to be moved.
+
+.PARAMETER targetContainerNodeId
+Node ID of the target container. If it is 0, the object is moved back to the root container of objects of the same type.
+
+.PARAMETER objectType
+The type of object being moved. Current supported values are 2 (packages) and 3 (advertisements).
+
+.LINK
+http://msdn.microsoft.com/en-us/library/cc144997.aspx
+
+.LINK
+http://msdn.microsoft.com/en-us/library/cc146279.aspx
+
+.LINK
+http://msdn.microsoft.com/en-us/library/cc145264.aspx
+#>
+Function Move-ObjectToContainer {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipelineByPropertyName=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [parameter(Mandatory=$true, HelpMessage="Instance Key#")][ValidateLength(8,8)][string]$instanceKey,
+        [parameter(Mandatory=$true, HelpMessage="Target Container ID#")][ValidateScript( { $_ -ge 0 } )][ValidateNotNull()][int]$targetContainerNodeId,
+        [parameter(Mandatory=$true, HelpMessage="Object Type#")][ValidateRange(2,3)][int]$objectType
+    )
+
+    $sourceContainerId = 0
+    $sourceContainer = Get-WMIObject -ComputerName $SccmServer.machine -Namespace $SccmServer.namespace -Query "Select * From SMS_ObjectContainerItem Where InstanceKey='$instanceKey'"
+    if($sourceContainer) {
+        # The object is in a folder other than the root folder.
+        $sourceContainerId = $sourceContainer.ContainerNodeID
+    }
+
+    $containerClass = [WMIClass]("\\" + $SccmServer.machine + "\" + $SccmServer.namespace + ":SMS_ObjectContainerItem")
+    $result = $containerClass.MoveMembers($instanceKey, $sourceContainerId, $targetContainerNodeId, $objectType)
+    return $result.ReturnValue
+}
+
+<#
+.SYNOPSIS
+Moves an SCCM Package to a folder.
+
+.DESCRIPTION
+Moves an SCCM Package to a folder.
+
+.PARAMETER siteProvider
+The name of the site provider.
+
+.PARAMETER siteCode
+The 3-character site code.
+
+.PARAMETER packageId
+The ID of the package to be moved.
+
+.PARAMETER targetFolderNodeId
+The folder to which the package is to be moved. If this value is 0, the package is removed from all folders.
+#>
+Function Move-SCCMPackageToFolder {
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipelineByPropertyName=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
+        [parameter(Mandatory=$true, HelpMessage="Package ID")][ValidateLength(8,8)][string]$packageId,
+        [parameter(Mandatory=$true, HelpMessage="Target Folder ID#")][ValidateScript( { $_ -ge 0 } )][ValidateNotNull()][int]$targetFolderNodeId
+    )
+
+    $result = Move-ObjectToContainer $SccmServer -instanceKey $packageId -targetContainerNodeId $targetFolderNodeId -objectType 2
+    if($result -ne 0) {
+        Throw "There was a problem moving package with ID $packageId to folder with ID $targetFolderNodeId"
+    }
+}
+
 Function Move-SCCMFolderContent {
 <#
 .SYNOPSIS
@@ -3069,6 +3330,7 @@ Function Move-SCCMFolderContent {
 	$Connection = Connect-SccmServer "MyServer01"
 	Move-SCCMFolderContent -SccmServer $Connection -ObjectID $SourceID -DestinationID $DestID 
 .NOTES
+	This will copy, not move!!!!!!!!!!!!!!!!!!
 	Author: Stéphane van Gulick
 	version: 1.0
 	History:
@@ -3078,7 +3340,7 @@ Function Move-SCCMFolderContent {
     [CmdletBinding()]
     PARAM (
         [Parameter(Mandatory=$true, HelpMessage="SCCM Server",ValueFromPipeline=$true)][Alias("Server","SmsServer")][System.Object] $SccmServer,
-		[Parameter(Mandatory=$false, HelpMessage="Object type to move")][validateset("Package","advertisment","Query","Report","MeteredProductRule","ConfigurationItem","OperatingSystemInstall","BootImagePackage","TaskSequencePackage","DeviceSettingPackage","DriverPackage","Driver","SoftwareUpdate","ConfigurationItemBaseLine","ImagePackage")]$ObjectType,
+		[Parameter(Mandatory=$true, HelpMessage="Object type to move")][validateset("Package","advertisment","Query","Report","MeteredProductRule","ConfigurationItem","OperatingSystemInstall","BootImagePackage","TaskSequencePackage","DeviceSettingPackage","DriverPackage","Driver","SoftwareUpdate","ConfigurationItemBaseLine","ImagePackage")]$ObjectType,
 		[Parameter(Mandatory=$false, HelpMessage="ID of object to move")][String]$ObjectID,
 		#[Parameter(Mandatory=$false, HelpMessage="ID of Source folder")]$sourceContainerId,
 		[Parameter(Mandatory=$false, HelpMessage="ID of destination folder")]$DestinationContainerId
