@@ -4,12 +4,20 @@ Here a scripts that some depend on "SCCM-Commands.psm1" (see below for details).
 The purpose is to extent the funtionally and flexiblity of SCCM 2007 and 2012.
 
 Examples:
-readvertisement.ps1           Recreate an package and advertisement, so already deployed clients get an updated source.
-object-location.ps1           Locates an object in the SCCM console
-invertory.ps1                 Creates an invertory in MySQL for web control (still under development)
-ADgrp_Collection.ps1          verifies if the groups collection have corrisponding AD groups
+readvertisement.ps1
+Recreate an package and advertisement, so already deployed clients get an updated source.
 
-Regarding SCCM-Commands.psm1:
+object-location.ps1
+Locates an object in the SCCM console
+
+invertory.ps1
+Creates an invertory in MySQL for web control (still under development)
+
+ADgrp_Collection.ps1
+verifies if the groups collection have corrisponding AD groups
+
+
+=== Regarding SCCM-Commands.psm1 ===
   SCCM powershell Module 3.0
 
   Created by : Stephane van Gulick (@stephanevg)
